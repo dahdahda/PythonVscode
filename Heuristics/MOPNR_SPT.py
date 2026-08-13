@@ -3,6 +3,17 @@ import json
 from pathlib import Path
 import DocuProcess
 
+"""
+MOPNR-SPT 柔性作业车间调度算法。
+
+本模块使用两条启发式规则构造调度：
+1. MOPNR（Most Operations Remaining）：剩余工序数最多的工件优先。
+2. SPT（Shortest Processing Time）：选择能让当前工序加工时间最短的候选机器。
+
+输入：FJSP 文本实例，格式由 ``DocuProcess.parse`` 解析。
+输出：单实例调度结果字典；批量运行时输出 performance_mopnr_spt.csv。
+"""
+
 
 def earliest_gap(intervals, ready, duration):
     """
