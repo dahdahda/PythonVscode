@@ -67,19 +67,15 @@ def build_mwkr_priority(jobs):
     """
     n_jobs = len(jobs)
     next_op = [0] * n_jobs
-    operation_works = [
-        [operation_work(choices) for choices in job] for job in jobs
-    ]
+    operation_works = [[operation_work(choices) for choices in job] for job in jobs]
+    # [[],[],,,]
+
     remaining_work = [sum(works) for works in operation_works]
     priority = []
 
     while any(next_op[job] < len(jobs[job]) for job in range(n_jobs)):
         job = min(
-            (
-                job
-                for job in range(n_jobs)
-                if next_op[job] < len(jobs[job])
-            ),
+            (job for job in range(n_jobs) if next_op[job] < len(jobs[job])),
             key=lambda job: (-remaining_work[job], job),
         )
         operation = next_op[job]
@@ -116,9 +112,7 @@ def solve(data):
         machine, processing_time = min(
             jobs[job][operation], key=lambda choice: (choice[1], choice[0])
         )
-        start = earliest_gap(
-            machine_intervals[machine], job_end[job], processing_time
-        )
+        start = earliest_gap(machine_intervals[machine], job_end[job], processing_time)
         end = start + processing_time
         record = (
             start,
