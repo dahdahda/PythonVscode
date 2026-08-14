@@ -1,12 +1,12 @@
-"""用迭代局部搜索（ILS）求解单个柔性作业车间实例。
+"""用迭代局部搜索（ILS）批量求解柔性作业车间实例。
 
 解由两部分组成：工件序列决定工序的调度优先次序，机器向量决定每道
 工序使用哪台候选机器。工件编号第 k 次出现代表该工件的第 k 道工序，
 因此交换序列中的工件编号不会破坏工艺顺序。解码器使用最早可行空隙
 生成主动调度，并检查工序优先约束和机器互斥约束。
 
-直接运行本文件只求解 ``data/hurink/vdata/la01.txt``，方便观察一次完整
-ILS 过程；``solve`` 函数也可复用于其他同格式实例。
+直接运行本文件会批量求解 ``data`` 中的 vdata 和 Brandimarte 文本实例，
+从 ``bks.json`` 读取对应下界，并输出 ``Metahe/performance_ils.csv``。
 """
 
 from __future__ import annotations
@@ -274,37 +274,118 @@ def solve(data, iterations=80, seed=42, local_trials=350, local_rounds=12):
     }
 
 
+def _empty_performance_row(dataset, instance):
+    """创建一条固定字段的空性能记录，失败时也能保留实例信息。"""
+    return {
+        "dataset": dataset,
+        "instance": instance,
+        "bsk_instance": "",
+        "size": "",
+        "lower_bound": "",
+        "makespan": "",
+        "gap_percent": "",
+        "makespan_gap": "",
+        "status": "ok",
+        "message": "",
+    }
+
+
+def run_batch(
+    data_directory,
+    output_path,
+    iterations=80,
+    seed=42,
+    local_trials=350,
+    local_rounds=12,
+):
+    """批量求解全部基准实例，并把 makespan 与下界差距保存为 CSV。"""
+    bks_path = data_directory / "bks.json"
+    with bks_path.open("r", encoding="utf-8-sig") as file:
+        benchmark_records = DocuProcess.find_benchmark_records(json.load(file))
+
+    performance = []
+    instance_files = DocuProcess.get_instance_files(data_directory)
+    total = len(instance_files)
+
+    for index, (dataset, instance, instance_path) in enumerate(instance_files, start=1):
+        row = _empty_performance_row(dataset, instance)
+        try:
+            result = solve(
+                instance_path.read_text(encoding="utf-8-sig"),
+                iterations=iterations,
+                seed=seed,
+                local_trials=local_trials,
+                local_rounds=local_rounds,
+            )
+            lower_bound, bks_instance = DocuProcess.get_lower_bound(
+                benchmark_records, dataset, instance
+            )
+            makespan = result["makespan"]
+            gap = (makespan - lower_bound) / lower_bound * 100
+            row.update(
+                {
+                    "bsk_instance": bks_instance,
+                    "size": f"{result['n_jobs']} x {result['n_machines']}",
+                    "lower_bound": lower_bound,
+                    "makespan": makespan,
+                    "gap_percent": f"{gap:.2f}",
+                    "makespan_gap": f"{makespan}({gap:.2f}%)",
+                }
+            )
+            print(f"[{index}/{total}] {dataset}/{instance}: " f"{row['makespan_gap']}")
+        except Exception as error:
+            row["status"] = "error"
+            row["message"] = f"{type(error).__name__}: {error}"
+            print(f"[{index}/{total}] {dataset}/{instance}: ERROR - {error}")
+        performance.append(row)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    DocuProcess.save_performance(performance, output_path)
+    return performance
+
+
 def main():
-    parser = argparse.ArgumentParser(description="使用 ILS 求解 la01")
+    parser = argparse.ArgumentParser(description="使用 ILS 批量求解 FJSP 实例")
     parser.add_argument("--iterations", type=int, default=80, help="ILS 迭代次数")
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
-    parser.add_argument("--output", type=Path, help="可选的 JSON 结果路径")
+    parser.add_argument(
+        "--local-trials",
+        type=int,
+        default=350,
+        help="每轮局部搜索抽样的邻居数",
+    )
+    parser.add_argument(
+        "--local-rounds",
+        type=int,
+        default=12,
+        help="每次局部搜索的最大改进轮数",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path(__file__).resolve().parent / "performance_ils_mwkr_eet.csv",
+        help="performance CSV 输出路径",
+    )
     args = parser.parse_args()
 
     if args.iterations < 0:
         parser.error("--iterations 不能小于 0")
+    if args.local_trials < 0:
+        parser.error("--local-trials 不能小于 0")
+    if args.local_rounds < 0:
+        parser.error("--local-rounds 不能小于 0")
 
-    instance_path = PROJECT_DIRECTORY / "data" / "hurink" / "vdata" / "la01.txt"
-    result = solve(
-        instance_path.read_text(encoding="utf-8-sig"),
+    performance = run_batch(
+        PROJECT_DIRECTORY / "data",
+        args.output,
         iterations=args.iterations,
         seed=args.seed,
+        local_trials=args.local_trials,
+        local_rounds=args.local_rounds,
     )
-    lower_bound = 570
-    gap = (result["makespan"] - lower_bound) / lower_bound * 100
-    print("实例：la01_vdata (10 x 5)")
-    print(f"随机种子：{result['seed']}，ILS 迭代：{result['iterations']}")
-    print(f"MWKR-EET 初解：{result['initial_makespan']}")
-    print(f"ILS 最好解：{result['makespan']}")
-    print(f"改进量：{result['improvement']}")
-    print(f"相对已知最优值 {lower_bound} 的差距：{gap:.2f}%")
-
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(
-            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        print(f"详细结果：{args.output.resolve()}")
+    successful = sum(row["status"] == "ok" for row in performance)
+    print(f"\n完成：{successful}/{len(performance)} 个实例求解成功")
+    print(f"performance 表格：{args.output.resolve()}")
 
 
 if __name__ == "__main__":
