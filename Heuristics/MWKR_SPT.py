@@ -18,7 +18,10 @@ import DocuProcess
 
 
 def earliest_gap(intervals, ready, duration):
-    """返回工序在一台机器上的最早可行开始时间。
+    """
+    核心函数
+    返回工序在一台机器上的最早可行开始时间。
+    根据已有的工件工序调度顺序以及对应工序使用机器，完成机器调度时间表
 
     参数：
         intervals (list[tuple]): 机器已有调度记录，单条格式为

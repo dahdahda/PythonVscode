@@ -30,7 +30,9 @@ import MWKR_EET  # noqa: E402
 
 @dataclass(frozen=True)
 class Solution:
-    """ILS 的不可变编码。machines 按 (工件, 工序) 的展平顺序存储。"""
+    """ILS 的不可变编码。machines 按 (工件, 工序) 的展平顺序存储。
+    sequence保存工件工序的调度顺序，machines保存的是对应工序的机器选择，并不是机器调度时间表。
+    """
 
     sequence: tuple[int, ...]
     machines: tuple[int, ...]
@@ -63,8 +65,10 @@ def _earliest_gap(intervals, ready, duration):
 
 
 def decode(solution, jobs, n_machines, validate=False):
-    """把编码解码为主动调度，返回 makespan、机器时间表和工件结束时间。
-    根据solution将调度结果计算处理->解码
+    """
+    核心函数
+    把编码解码为主动调度，返回 makespan、机器时间表和工件结束时间。
+    根据solution中的工件工序调度顺序以及相应机器选择计算调度结果计算，得到机器时间表等->解码
     """
     offsets = _operation_offsets(jobs)
     expected_operations = sum(len(job) for job in jobs)
